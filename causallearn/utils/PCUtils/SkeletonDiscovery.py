@@ -12,6 +12,7 @@ from causallearn.utils.PCUtils.BackgroundKnowledge import BackgroundKnowledge
 from causallearn.utils.PCUtils.Helper import append_value
 from causallearn.utils.cit import CIT
 
+from joblib import Parallel, delayed
 
 def skeleton_discovery(
     data: ndarray, 
@@ -75,6 +76,10 @@ def skeleton_discovery(
             if len(Neigh_x) < depth - 1:
                 continue
             for y in Neigh_x:
+                if background_knowledge is not None and (
+                        background_knowledge.is_required(cg.G.nodes[x], cg.G.nodes[y])
+                        or background_knowledge.is_required(cg.G.nodes[y], cg.G.nodes[x])):
+                    continue
                 knowledge_ban_edge = False
                 sepsets = set()
                 if background_knowledge is not None and (
@@ -97,29 +102,22 @@ def skeleton_discovery(
                         edge_removal.append((y, x))  # depth l have been considered
 
                 Neigh_x_noy = np.delete(Neigh_x, np.where(Neigh_x == y))
-                for S in combinations(Neigh_x_noy, depth):
+
+                def _parallel_fun(x, y, S):
                     p = cg.ci_test(x, y, S)
-                    if p > alpha:
-                        if verbose:
-                            print('%d ind %d | %s with p-value %f\n' % (x, y, S, p))
-                        if not stable:
-                            edge1 = cg.G.get_edge(cg.G.nodes[x], cg.G.nodes[y])
-                            if edge1 is not None:
-                                cg.G.remove_edge(edge1)
-                            edge2 = cg.G.get_edge(cg.G.nodes[y], cg.G.nodes[x])
-                            if edge2 is not None:
-                                cg.G.remove_edge(edge2)
-                            append_value(cg.sepset, x, y, S)
-                            append_value(cg.sepset, y, x, S)
-                            break
-                        else:
-                            edge_removal.append((x, y))  # after all conditioning sets at
-                            edge_removal.append((y, x))  # depth l have been considered
-                            for s in S:
-                                sepsets.add(s)
-                    else:
-                        if verbose:
-                            print('%d dep %d | %s with p-value %f\n' % (x, y, S, p))
+                    return (x, y, S, p)
+                all_S = list(combinations(Neigh_x_noy, depth))
+                results = Parallel(n_jobs=-1)(
+                    delayed(_parallel_fun)(x, y, S) for S in all_S
+                )
+
+                for x_, y_, S_, p_ in results:
+                    if p_ > alpha:
+                        edge_removal.append((x, y))  # after all conditioning sets at
+                        edge_removal.append((y, x))  # depth l have been considered
+                        for s in S_:
+                            sepsets.add(s)    
+
                 if (x, y) in edge_removal or not cg.G.get_edge(cg.G.nodes[x], cg.G.nodes[y]):
                     append_value(cg.sepset, x, y, tuple(sepsets))
                     append_value(cg.sepset, y, x, tuple(sepsets))
