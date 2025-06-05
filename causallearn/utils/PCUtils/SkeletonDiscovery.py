@@ -113,8 +113,8 @@ def skeleton_discovery(
 
                 for x_, y_, S_, p_ in results:
                     if p_ > alpha:
-                        edge_removal.append((x, y))  # after all conditioning sets at
-                        edge_removal.append((y, x))  # depth l have been considered
+                        edge_removal.append((x_, y_))  # after all conditioning sets at
+                        edge_removal.append((y_, x_))  # depth l have been considered
                         for s in S_:
                             sepsets.add(s)    
 
